@@ -1,6 +1,7 @@
-﻿using Stat.CodingChallenge.Application.Models;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Stat.CodingChallenge.Domain.Entities;
 using Stat.CodingChallenge.Domain.Handlers;
-using System;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
@@ -9,24 +10,32 @@ namespace Stat.CodingChallenge.Application
 {
     public class Processor
     {
-        private readonly string bucketName;
+        private readonly IConfiguration configuration;
         private readonly IS3Handler s3Handler;
         private readonly ICsvHandler csvHandler;
+        private readonly ILogger<Processor> logger;
 
         public Processor(
-            string bucketName,
+            IConfiguration configuration,
             IS3Handler s3Handler,
-            ICsvHandler csvHandler)
+            ICsvHandler csvHandler,
+            ILogger<Processor> logger)
         {
-            this.bucketName = bucketName;
+            this.configuration = configuration;
             this.s3Handler = s3Handler;
             this.csvHandler = csvHandler;
+            this.logger = logger;
         }
 
         public async Task ProcessAsync()
         {
-            this.Cleanup();
-            var metadata = await this.LoadMetadataAsync();
+            logger.LogInformation("Starting process...");
+
+            var bucketName = configuration.GetSection("S3BucketName").Value;
+            logger.LogInformation($"Bucket Name: {bucketName}");
+
+            this.LocalCleanup(bucketName);
+            var metadata = await this.LoadMetadataAsync(bucketName);
 
             var zipFileNames = await s3Handler.ListAllZipFilesAsync(bucketName);
 
@@ -35,59 +44,92 @@ namespace Stat.CodingChallenge.Application
             
             var pdfLookup = metadata.BuildPdfLookup();
 
-            await Parallel.ForEachAsync(zipFileNames, new ParallelOptions { MaxDegreeOfParallelism = 1 },  async (zipFileName, cancellationToken) =>
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var isZipProcessed = metadata.ProcessedZips.Contains(zipFileName);
-
-                if (!isZipProcessed)
+                await Parallel.ForEachAsync(zipFileNames, async (zipFileName, cancellationToken) =>
                 {
-                    var localZipPath = $"{AppDomain.CurrentDomain.BaseDirectory}{bucketName}\\{zipFileName}";
-                    await s3Handler.DownloadFileAsync(bucketName, zipFileName, localZipPath);
+                    cancellationToken.ThrowIfCancellationRequested();
 
-                    var localUnzipedPath = localZipPath.Replace(".zip", "");
-                    ZipFile.ExtractToDirectory(localZipPath, localZipPath.Replace(".zip", ""));
+                    var isZipProcessed = metadata.ProcessedZips.Contains(zipFileName);
 
-                    var csvPath = $"{localUnzipedPath}\\Komar_Deduction_{zipFileName.Replace(".zip", ".csv")}";
-                    var mappings = await csvHandler.ExtractMapping(csvPath);
-
-                    await Parallel.ForEachAsync(mappings, new ParallelOptions { MaxDegreeOfParallelism = 1 }, async (mapping, cancellationToken) =>
+                    if (!isZipProcessed)
                     {
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                        var isPdfProcessed = pdfLookup.Contains(mapping.Key);
-
-                        if (!isPdfProcessed)
+                        try
                         {
-                            var pdfFileName = mapping.Key;
-                            var poNumber = mapping.Value;
+                            logger.LogInformation($"Processing Zip: {zipFileName}...");
 
-                            var localPdfPath = $"{localUnzipedPath}\\{pdfFileName}";
-                            var s3Key = $"by-po/{poNumber}\\{pdfFileName}";
-                            await s3Handler.UploadFileAsync(localPdfPath, bucketName, s3Key);
+                            var localZipPath = $"{AppDomain.CurrentDomain.BaseDirectory}{bucketName}\\{zipFileName}";
+                            await s3Handler.DownloadFileAsync(bucketName, zipFileName, localZipPath);
 
-                            processedFiles.Add(new FileMetadata(pdfFileName, zipFileName, DateTime.UtcNow));
+                            var localUnzipedPath = localZipPath.Replace(".zip", "");
+                            ZipFile.ExtractToDirectory(localZipPath, localZipPath.Replace(".zip", ""));
+
+                            var csvPath = $"{localUnzipedPath}\\Komar_Deduction_{zipFileName.Replace(".zip", ".csv")}";
+                            var mappings = await csvHandler.ExtractMappingAsync(csvPath);
+
+                            await Parallel.ForEachAsync(mappings, async (mapping, cancellationToken) =>
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+
+                                var isPdfProcessed = pdfLookup.Contains(mapping.FileName);
+
+                                if (!isPdfProcessed)
+                                {
+                                    logger.LogInformation($"Processing File: {mapping.FileName}...");
+
+                                    var localPdfPath = $"{localUnzipedPath}\\{mapping.FileName}";
+                                    var s3Key = $"by-po/{mapping.PONumber}\\{mapping.FileName}";
+
+                                    await s3Handler.UploadFileAsync(localPdfPath, bucketName, s3Key);
+
+                                    processedFiles.Add(new FileMetadata(mapping.FileName, zipFileName, DateTime.UtcNow));
+
+                                    logger.LogInformation($"File: {mapping.FileName} uploaded...");
+                                }
+                                else
+                                {
+                                    logger.LogInformation($"File: {mapping.FileName} already processed...");
+                                }
+                            });
+
+                            processedZips.Add(zipFileName);
                         }
-                    });
+                        catch (Exception ex)
+                        {
+                            // Log the error and keep trying the others zips.
+                            logger.LogError(ex, $"Erro ao processar zip. {zipFileName}");
+                        }
+                    }
+                    else
+                    {
+                        logger.LogInformation($"Zip file: {zipFileName} already processed...");
+                    }
+                });
+            }
+            finally
+            {
+                metadata.ProcessedZips.AddRange(processedZips);
+                metadata.ProcessedFiles.AddRange(processedFiles);
 
-                    processedZips.Add(zipFileName);
-                }
-            });
+                await this.UploadMetadataAsync(metadata, bucketName);
+                logger.LogInformation($"Metadata updated...");
 
-            metadata.ProcessedZips.AddRange(processedZips);
-            metadata.ProcessedFiles.AddRange(processedFiles);
-
-            await this.UploadMetadataAsync(metadata);
+                this.LocalCleanup(bucketName);
+            }
         }
 
-        private void Cleanup()
+        private void LocalCleanup(string bucketName)
         {
+
             var localPath = $"{AppDomain.CurrentDomain.BaseDirectory}\\{bucketName}";
-            Directory.Delete(localPath, true);
+
+            if (Directory.Exists(localPath))
+            {
+                Directory.Delete(localPath, true);
+            }
         }
 
-        private async Task<Metadata> LoadMetadataAsync()
+        private async Task<Metadata> LoadMetadataAsync(string bucketName)
         {
             var metadataFileName = "metadata.json";
             var localPath = $"{AppDomain.CurrentDomain.BaseDirectory}{bucketName}\\{metadataFileName}";
@@ -107,13 +149,15 @@ namespace Stat.CodingChallenge.Application
             return metadata;
         }
 
-        private async Task UploadMetadataAsync(Metadata metadata)
+        private async Task UploadMetadataAsync(Metadata metadata, string bucketName)
         {
             var metadataFileName = "metadata.json";
             var localPath = $"{AppDomain.CurrentDomain.BaseDirectory}\\{bucketName}\\{metadataFileName}";
 
-            using var stream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None);
-            await JsonSerializer.SerializeAsync(stream, metadata);
+            using (var stream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await JsonSerializer.SerializeAsync(stream, metadata);
+            }
 
             await s3Handler.UploadFileAsync(localPath, bucketName, metadataFileName);
         }

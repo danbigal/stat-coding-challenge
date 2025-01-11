@@ -11,6 +11,7 @@
   </ItemGroup>
 	
   <ItemGroup>
+    <ProjectReference Include="..\Stat.CodingChallenge.Application\Stat.CodingChallenge.Application.csproj" />
     <ProjectReference Include="..\Stat.CodingChallenge.Domain\Stat.CodingChallenge.Domain.csproj" />
   </ItemGroup>
 

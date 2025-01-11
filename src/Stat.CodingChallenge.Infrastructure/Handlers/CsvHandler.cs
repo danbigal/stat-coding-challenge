@@ -1,13 +1,15 @@
 ﻿using CsvHelper;
 using CsvHelper.Configuration;
+using Stat.CodingChallenge.Domain.Entities;
 using Stat.CodingChallenge.Domain.Handlers;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Stat.CodingChallenge.Infrastructure.Handlers
 {
     public class CsvHandler : ICsvHandler
     {
-        public async Task<Dictionary<string, string>> ExtractMapping(string csvPath)
+        public async Task<IReadOnlyList<Mapping>> ExtractMappingAsync(string csvPath)
         {
             using var reader = new StreamReader(csvPath);
             var configReader = new CsvConfiguration(CultureInfo.CurrentCulture) { Delimiter = "~" };
@@ -17,22 +19,30 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
             await csvReader.ReadAsync();
             csvReader.ReadHeader();
 
-            var extractedDict = new Dictionary<string, string>();
+            var mappings = new HashSet<Mapping>();
 
             while (await csvReader.ReadAsync())
             {
-                string key = ExtractPdfName(csvReader.GetField("Attachment List"));
-                string value = csvReader.GetField("PO Number");
+                var pdfs = ExtractPdfName(csvReader.GetField("Attachment List"));
+                var poNumber = csvReader.GetField("PO Number");
 
-                extractedDict.Add(key, value);
+                foreach (var pdf in pdfs )
+                {
+                    mappings.Add(new Mapping(pdf, poNumber));
+                }
             }
 
-            return extractedDict;
+            return mappings.ToList();
         }
 
-        private string ExtractPdfName(string attachmentList)
+        private IReadOnlyList<string> ExtractPdfName(string attachmentList)
         {
-            return "";
+            string pattern = @"[^/]+\.pdf";
+
+            var matches = Regex.Matches(attachmentList, pattern);
+            var pdfs = matches.Select(m => m.Value).ToList();
+
+            return pdfs;
         }
     }
 }

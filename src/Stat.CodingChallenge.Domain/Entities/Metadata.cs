@@ -1,6 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-
-namespace Stat.CodingChallenge.Application.Models
+﻿namespace Stat.CodingChallenge.Domain.Entities
 {
     public class Metadata
     {

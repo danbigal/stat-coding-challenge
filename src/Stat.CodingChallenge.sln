@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.12.35527.113
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge.ConsoleApplication", "Stat.CodingChallenge\Stat.CodingChallenge.ConsoleApplication.csproj", "{6C0DB584-82C1-451A-AED2-9B96DBB4B713}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge", "Stat.CodingChallenge\Stat.CodingChallenge.csproj", "{6C0DB584-82C1-451A-AED2-9B96DBB4B713}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge.Application", "Stat.CodingChallenge.Application\Stat.CodingChallenge.Application.csproj", "{CF15AFBF-586C-413F-8486-CF3BC693BC35}"
 EndProject

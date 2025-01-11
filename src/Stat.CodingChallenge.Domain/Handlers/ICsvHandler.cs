@@ -1,7 +1,9 @@
-﻿namespace Stat.CodingChallenge.Domain.Handlers
+﻿using Stat.CodingChallenge.Domain.Entities;
+
+namespace Stat.CodingChallenge.Domain.Handlers
 {
     public interface ICsvHandler
     {
-        Task<Dictionary<string, string>> ExtractMapping(string csvPath);
+        Task<IReadOnlyList<Mapping>> ExtractMappingAsync(string csvPath);
     }
 }
