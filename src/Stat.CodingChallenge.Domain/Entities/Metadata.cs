@@ -25,9 +25,7 @@
     public class FileMetadata
     {
         public string PdfFileName { get; set; }
-
         public string ZipFileName { get; set; }
-
         public DateTime ProcessedTimestampUtc { get; set; }
 
         public FileMetadata()

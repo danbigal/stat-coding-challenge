@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Stat.CodingChallenge.Application;
 using Stat.CodingChallenge.Domain.Handlers;
+using Stat.CodingChallenge.Domain.Wrappers;
 using Stat.CodingChallenge.Infrastructure.Handlers;
+using Stat.CodingChallenge.Infrastructure.Wrappers;
 using System.Diagnostics;
 
 namespace Stat.CodingChallenge
@@ -23,7 +25,7 @@ namespace Stat.CodingChallenge
 
             await processor.ProcessAsync();
 
-            Console.WriteLine($"Process finished: {stopwatch.Elapsed}");
+            Console.WriteLine($"Process finished: {stopwatch.Elapsed}. Press any key to finish.");
             Console.ReadKey();
         }
 
@@ -32,7 +34,10 @@ namespace Stat.CodingChallenge
             services
                 .AddSingleton<IAmazonS3, AmazonS3Client>()
                 .AddSingleton<ICsvHandler, CsvHandler>()
-                .AddSingleton<IS3Handler, S3Handler>();
+                .AddSingleton<IS3Handler, S3Handler>()
+                .AddSingleton<IFileWrapper, FileWrapper>();
+
+            services.AddSingleton<Processor>();
 
             var config = new ConfigurationBuilder()
                 .AddJsonFile("appsettings.json")
@@ -40,14 +45,11 @@ namespace Stat.CodingChallenge
 
             services.AddSingleton<IConfiguration>(provider => config);
 
-
             services.AddLogging(logging =>
             {
                 logging.ClearProviders();
                 logging.AddConsole();
             });
-
-            services.AddSingleton<Processor>();
         }
     }
 }

@@ -11,6 +11,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge.Domain
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge.Infrastructure", "Stat.CodingChallenge.Infrastructure\Stat.CodingChallenge.Infrastructure.csproj", "{50D22595-E345-421E-A1D6-0E68E257EE44}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stat.CodingChallenge.Tests", "Stat.CodingChallenge.Tests\Stat.CodingChallenge.Tests.csproj", "{9AEF7A73-361A-4CB4-8AC5-5ABD463EEF98}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -33,6 +35,10 @@ Global
 		{50D22595-E345-421E-A1D6-0E68E257EE44}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{50D22595-E345-421E-A1D6-0E68E257EE44}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{50D22595-E345-421E-A1D6-0E68E257EE44}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9AEF7A73-361A-4CB4-8AC5-5ABD463EEF98}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9AEF7A73-361A-4CB4-8AC5-5ABD463EEF98}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9AEF7A73-361A-4CB4-8AC5-5ABD463EEF98}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9AEF7A73-361A-4CB4-8AC5-5ABD463EEF98}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

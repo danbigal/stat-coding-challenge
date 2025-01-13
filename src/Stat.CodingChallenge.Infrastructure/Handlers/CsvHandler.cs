@@ -1,5 +1,7 @@
 ﻿using CsvHelper;
 using CsvHelper.Configuration;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Stat.CodingChallenge.Domain.Entities;
 using Stat.CodingChallenge.Domain.Handlers;
 using System.Globalization;
@@ -9,10 +11,21 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
 {
     public class CsvHandler : ICsvHandler
     {
+        private readonly ILogger<ICsvHandler> logger;
+        private readonly string delimiter;
+
+        public CsvHandler(
+            IConfiguration configuration,
+            ILogger<ICsvHandler> logger)
+        {
+            this.delimiter = configuration.GetSection("CsvDelimiter").Value;
+            this.logger = logger;
+        }
+
         public async Task<IReadOnlyList<Mapping>> ExtractMappingAsync(string csvPath)
         {
             using var reader = new StreamReader(csvPath);
-            var configReader = new CsvConfiguration(CultureInfo.CurrentCulture) { Delimiter = "~" };
+            var configReader = new CsvConfiguration(CultureInfo.CurrentCulture) { Delimiter = this.delimiter };
             
             using var csvReader = new CsvReader(reader, configReader);
 
@@ -23,8 +36,15 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
 
             while (await csvReader.ReadAsync())
             {
+                var poNumber = csvReader.GetField("PO Number").Trim();
+                if (string.IsNullOrEmpty(poNumber))
+                {
+                    this.logger.LogWarning($"PO Number not found. Line: {csvReader.CurrentIndex} File: {csvPath}");
+                    continue;
+                }
+
                 var pdfs = ExtractPdfName(csvReader.GetField("Attachment List"));
-                var poNumber = csvReader.GetField("PO Number");
+                
 
                 foreach (var pdf in pdfs )
                 {

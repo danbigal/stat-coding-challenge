@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using Stat.CodingChallenge.Domain.Entities;
 using Stat.CodingChallenge.Domain.Handlers;
+using Stat.CodingChallenge.Domain.Wrappers;
 using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text.Json;
@@ -13,35 +14,39 @@ namespace Stat.CodingChallenge.Application
         private readonly IConfiguration configuration;
         private readonly IS3Handler s3Handler;
         private readonly ICsvHandler csvHandler;
+        private readonly IFileWrapper fileWrapper;
         private readonly ILogger<Processor> logger;
 
         public Processor(
             IConfiguration configuration,
             IS3Handler s3Handler,
             ICsvHandler csvHandler,
+            IFileWrapper fileWrapper,
             ILogger<Processor> logger)
         {
             this.configuration = configuration;
             this.s3Handler = s3Handler;
             this.csvHandler = csvHandler;
+            this.fileWrapper = fileWrapper;
             this.logger = logger;
         }
 
-        public async Task ProcessAsync()
+        public async Task<Metadata> ProcessAsync()
         {
-            logger.LogInformation("Starting process...");
+            this.logger.LogInformation("Starting process...");
 
-            var bucketName = configuration.GetSection("S3BucketName").Value;
-            logger.LogInformation($"Bucket Name: {bucketName}");
+            var bucketName = this.configuration.GetSection("S3BucketName").Value;
+            this.logger.LogInformation($"Bucket Name: {bucketName}");
 
             this.LocalCleanup(bucketName);
             var metadata = await this.LoadMetadataAsync(bucketName);
 
-            var zipFileNames = await s3Handler.ListAllZipFilesAsync(bucketName);
+            var zipFileNames = await this.s3Handler.ListAllZipFilesAsync(bucketName);
 
             var processedZips = new ConcurrentBag<string>();
             var processedFiles = new ConcurrentBag<FileMetadata>();
             
+            // Building a HashSet lookup, because HashSet is O(1) to access its data, so it'll be faster.
             var pdfLookup = metadata.BuildPdfLookup();
 
             try
@@ -56,16 +61,16 @@ namespace Stat.CodingChallenge.Application
                     {
                         try
                         {
-                            logger.LogInformation($"Processing Zip: {zipFileName}...");
+                            this.logger.LogInformation($"Processing Zip: {zipFileName}...");
 
                             var localZipPath = $"{AppDomain.CurrentDomain.BaseDirectory}{bucketName}\\{zipFileName}";
-                            await s3Handler.DownloadFileAsync(bucketName, zipFileName, localZipPath);
+                            await this.s3Handler.DownloadFileAsync(bucketName, zipFileName, localZipPath);
 
                             var localUnzipedPath = localZipPath.Replace(".zip", "");
-                            ZipFile.ExtractToDirectory(localZipPath, localZipPath.Replace(".zip", ""));
+                            this.fileWrapper.ExtractZipToDirectory(localZipPath, localZipPath.Replace(".zip", ""));
 
                             var csvPath = $"{localUnzipedPath}\\Komar_Deduction_{zipFileName.Replace(".zip", ".csv")}";
-                            var mappings = await csvHandler.ExtractMappingAsync(csvPath);
+                            var mappings = await this.csvHandler.ExtractMappingAsync(csvPath);
 
                             await Parallel.ForEachAsync(mappings, async (mapping, cancellationToken) =>
                             {
@@ -75,20 +80,20 @@ namespace Stat.CodingChallenge.Application
 
                                 if (!isPdfProcessed)
                                 {
-                                    logger.LogInformation($"Processing File: {mapping.FileName}...");
+                                    this.logger.LogInformation($"Processing File: {mapping.FileName}...");
 
                                     var localPdfPath = $"{localUnzipedPath}\\{mapping.FileName}";
-                                    var s3Key = $"by-po/{mapping.PONumber}\\{mapping.FileName}";
+                                    var s3Key = $"by-po/{mapping.PONumber}/{mapping.FileName}";
 
-                                    await s3Handler.UploadFileAsync(localPdfPath, bucketName, s3Key);
+                                    await this.s3Handler.UploadFileAsync(localPdfPath, bucketName, s3Key);
 
                                     processedFiles.Add(new FileMetadata(mapping.FileName, zipFileName, DateTime.UtcNow));
 
-                                    logger.LogInformation($"File: {mapping.FileName} uploaded...");
+                                    this.logger.LogInformation($"File: {mapping.FileName} uploaded...");
                                 }
                                 else
                                 {
-                                    logger.LogInformation($"File: {mapping.FileName} already processed...");
+                                    this.logger.LogInformation($"File: {mapping.FileName} already processed...");
                                 }
                             });
 
@@ -97,12 +102,12 @@ namespace Stat.CodingChallenge.Application
                         catch (Exception ex)
                         {
                             // Log the error and keep trying the others zips.
-                            logger.LogError(ex, $"Erro ao processar zip. {zipFileName}");
+                            this.logger.LogError(ex, $"Erro ao processar zip. {zipFileName}");
                         }
                     }
                     else
                     {
-                        logger.LogInformation($"Zip file: {zipFileName} already processed...");
+                        this.logger.LogInformation($"Zip file: {zipFileName} already processed...");
                     }
                 });
             }
@@ -112,10 +117,12 @@ namespace Stat.CodingChallenge.Application
                 metadata.ProcessedFiles.AddRange(processedFiles);
 
                 await this.UploadMetadataAsync(metadata, bucketName);
-                logger.LogInformation($"Metadata updated...");
+                this.logger.LogInformation($"Metadata updated...");
 
                 this.LocalCleanup(bucketName);
             }
+
+            return metadata;
         }
 
         private void LocalCleanup(string bucketName)
@@ -136,14 +143,14 @@ namespace Stat.CodingChallenge.Application
 
             try
             {
-                await s3Handler.DownloadFileAsync(bucketName, metadataFileName, localPath);
+                await this.s3Handler.DownloadFileAsync(bucketName, metadataFileName, localPath);
             }
             catch (Exception)
             {
                 return new Metadata();
             }
 
-            var metadataJsonString = await File.ReadAllTextAsync(localPath);
+            var metadataJsonString = await this.fileWrapper.ReadAllTextAsync(localPath);
             var metadata = JsonSerializer.Deserialize<Metadata>(metadataJsonString);
 
             return metadata;
@@ -151,15 +158,11 @@ namespace Stat.CodingChallenge.Application
 
         private async Task UploadMetadataAsync(Metadata metadata, string bucketName)
         {
-            var metadataFileName = "metadata.json";
-            var localPath = $"{AppDomain.CurrentDomain.BaseDirectory}\\{bucketName}\\{metadataFileName}";
-
-            using (var stream = new FileStream(localPath, FileMode.Create, FileAccess.Write, FileShare.None))
+            using (var stream = new MemoryStream())
             {
                 await JsonSerializer.SerializeAsync(stream, metadata);
+                await this.s3Handler.UploadFileAsync(stream, bucketName, "metadata.json");
             }
-
-            await s3Handler.UploadFileAsync(localPath, bucketName, metadataFileName);
         }
     }
 }

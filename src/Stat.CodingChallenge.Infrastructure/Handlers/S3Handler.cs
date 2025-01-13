@@ -1,5 +1,4 @@
-﻿using Amazon.Runtime.Internal.Util;
-using Amazon.S3;
+﻿using Amazon.S3;
 using Amazon.S3.Model;
 using Amazon.S3.Transfer;
 using Microsoft.Extensions.Logging;
@@ -29,7 +28,7 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
                 BucketName = s3BucketName,
             };
 
-            var response = await s3Client.ListObjectsV2Async(request);
+            var response = await this.s3Client.ListObjectsV2Async(request);
 
             foreach (var obj in response.S3Objects)
             {
@@ -43,7 +42,7 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
         }
         public async Task DownloadFileAsync(string s3BucketName, string s3Key, string localDestinationPath)
         {
-            var transferUtility = new TransferUtility(s3Client);
+            var transferUtility = new TransferUtility(this.s3Client);
             await transferUtility.DownloadAsync(localDestinationPath, s3BucketName, s3Key);
         }
 
@@ -51,13 +50,19 @@ namespace Stat.CodingChallenge.Infrastructure.Handlers
         {
             if (File.Exists(localSourcePath))
             {
-                var transferUtility = new TransferUtility(s3Client);
+                var transferUtility = new TransferUtility(this.s3Client);
                 await transferUtility.UploadAsync(localSourcePath, s3BucketName, s3Key);
             }
             else
             {
-                logger.LogWarning($"Unable to upload {s3Key}. File not found.");
+                this.logger.LogWarning($"Unable to upload {s3Key}. File not found.");
             }
+        }
+
+        public async Task UploadFileAsync(Stream stream, string s3BucketName, string s3Key)
+        {
+            var transferUtility = new TransferUtility(this.s3Client);
+            await transferUtility.UploadAsync(stream, s3BucketName, s3Key);
         }
     }
 }
